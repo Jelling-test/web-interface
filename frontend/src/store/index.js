@@ -41,7 +41,8 @@ export default createStore({
     // Socket.io status
     socketConnected: false,
     // Fejl
-    error: null
+    error: null,
+    socket: socket // Tilføj socket til state
   },
   
   getters: {
@@ -124,6 +125,13 @@ export default createStore({
       // Opdater også valgt måler hvis det er den samme
       if (state.selectedMeter && state.selectedMeter.mac === updatedMeter.mac) {
         state.selectedMeter = { ...state.selectedMeter, ...updatedMeter }
+      }
+    },
+    
+    // Opdater kun den valgte måler
+    UPDATE_SELECTED_METER(state, updates) {
+      if (state.selectedMeter) {
+        state.selectedMeter = { ...state.selectedMeter, ...updates }
       }
     },
     
@@ -317,9 +325,28 @@ export default createStore({
     },
     
     // Tænd måler
-    async turnOnMeter({ commit }, mac) {
+    async turnOnMeter({ commit, state }, mac) {
       try {
         await meterService.turnOn(mac)
+        
+        // Opdater målerens status direkte, når kommandoen sendes
+        commit('UPDATE_METER', { 
+          mac, 
+          power: 'tændt',
+          lastSeen: new Date().toISOString()
+        })
+        
+        // Hvis denne måler er valgt, opdater også den valgte målers status
+        const selectedMeter = state.selectedMeter
+        if (selectedMeter && selectedMeter.mac === mac) {
+          commit('UPDATE_SELECTED_METER', {
+            status: {
+              status: 'Tændt',
+              tidspunkt: new Date().toISOString()
+            }
+          })
+        }
+        
         return true
       } catch (error) {
         commit('SET_ERROR', 'Kunne ikke tænde måler')
@@ -329,9 +356,28 @@ export default createStore({
     },
     
     // Sluk måler
-    async turnOffMeter({ commit }, mac) {
+    async turnOffMeter({ commit, state }, mac) {
       try {
         await meterService.turnOff(mac)
+        
+        // Opdater målerens status direkte, når kommandoen sendes
+        commit('UPDATE_METER', { 
+          mac, 
+          power: 'slukket',
+          lastSeen: new Date().toISOString()
+        })
+        
+        // Hvis denne måler er valgt, opdater også den valgte målers status
+        const selectedMeter = state.selectedMeter
+        if (selectedMeter && selectedMeter.mac === mac) {
+          commit('UPDATE_SELECTED_METER', {
+            status: {
+              status: 'Slukket',
+              tidspunkt: new Date().toISOString()
+            }
+          })
+        }
+        
         return true
       } catch (error) {
         commit('SET_ERROR', 'Kunne ikke slukke måler')
@@ -382,22 +428,28 @@ export default createStore({
     },
     
     // Opsæt socket.io lyttere
-    setupSocketListeners({ commit }) {
+    setupSocketListeners({ commit, state }) {
+      // Brug this.state.socket i stedet for at oprette en ny variabel
+      if (!this.state.socket) {
+        console.error('Socket.IO ikke initialiseret')
+        return
+      }
+      
       // Forbindelse oprettet
-      socket.on('connect', () => {
+      this.state.socket.on('connect', () => {
         commit('SET_SOCKET_CONNECTED', true)
         console.log('Socket.io forbindelse oprettet')
       })
       
       // Forbindelse afbrudt
-      socket.on('disconnect', () => {
+      this.state.socket.on('disconnect', () => {
         commit('SET_SOCKET_CONNECTED', false)
         console.log('Socket.io forbindelse afbrudt')
       })
       
-      // MQTT besked modtaget
-      socket.on('mqtt_message', ({ topic, payload }) => {
-        console.log('MQTT besked modtaget:', topic, payload)
+      // Lyt efter MQTT-beskeder
+      this.state.socket.on('mqtt_message', ({ topic, payload }) => {
+        console.log(`Modtaget MQTT-besked: ${topic}`, payload)
         
         // Håndter forskellige beskedtyper
         if (topic.includes('/status')) {
@@ -426,6 +478,29 @@ export default createStore({
               ...this.state.meterReadings.slice(0, 199) // Behold kun de seneste 200
             ])
           }
+        }
+      })
+      
+      // Lyt efter power status opdateringer
+      this.state.socket.on('power_status_update', ({ mac, status, timestamp }) => {
+        console.log(`Modtaget power status opdatering: ${mac} - ${status}`)
+        
+        // Opdater målerens status
+        commit('UPDATE_METER', { 
+          mac, 
+          power: status === 'Tændt' ? 'tændt' : 'slukket',
+          lastSeen: timestamp || new Date().toISOString()
+        })
+        
+        // Hvis denne måler er valgt, opdater også den valgte målers status
+        const selectedMeter = state.selectedMeter
+        if (selectedMeter && selectedMeter.mac === mac) {
+          commit('UPDATE_SELECTED_METER', {
+            status: {
+              status: status,
+              tidspunkt: timestamp || new Date().toISOString()
+            }
+          })
         }
       })
     }

@@ -41,6 +41,9 @@ def on_mqtt_connect(client, userdata, flags, rc, properties=None):
         # Abonner på relevante emner
         client.subscribe("maaler/+/status")
         client.subscribe("maaler/+/data")
+        # Abonner på Power-relaterede emner
+        client.subscribe("stat/+/Power")
+        print("Abonneret på MQTT-emner: maaler/+/status, maaler/+/data, stat/+/Power")
     else:
         connected_to_mqtt = False
         print(f"Fejl ved forbindelse til MQTT broker. Returkode: {rc}")
@@ -60,7 +63,42 @@ def on_mqtt_message(client, userdata, message, properties=None):
     print(f"Modtaget besked på emne: {message.topic}, payload: {message.payload.decode()}")
     try:
         topic = message.topic
-        payload = json.loads(message.payload.decode())
+        payload_str = message.payload.decode()
+        
+        # Håndter Power-kommandoer særskilt
+        if 'Power' in topic:
+            print(f"Power-kommando modtaget: {topic} - {payload_str}")
+            
+            # Emnet kan være i formatet: stat/obkXXXXXXXXXXXX/Power
+            parts = topic.split('/')
+            if len(parts) >= 2:
+                mac_part = parts[1]
+                if mac_part.startswith('obk'):
+                    mac_no_colon = mac_part.replace('obk', '')
+                    
+                    # Indsæt kolon i MAC-adressen for at matche formatet i vores app
+                    mac = ':'.join([mac_no_colon[i:i+2] for i in range(0, len(mac_no_colon), 2)])
+                    
+                    # Bestem status baseret på payload
+                    status = "Tændt" if payload_str == "ON" else "Slukket"
+                    
+                    # Send status-opdatering til frontend
+                    print(f"Sender power_status_update til frontend: {mac} - {status}")
+                    socketio.emit('power_status_update', {
+                        'mac': mac,
+                        'status': status,
+                        'timestamp': datetime.now().isoformat()
+                    })
+                    
+                    print(f"Status for {mac} opdateret til {status}")
+                    return  # Afslut funktionen her, da vi har håndteret Power-kommandoen
+        
+        # Forsøg at parse payload som JSON
+        try:
+            payload = json.loads(payload_str)
+        except json.JSONDecodeError:
+            # Hvis payload ikke er JSON, brug raw string
+            payload = payload_str
         
         # Videreformidl besked til forbundne webklienter via SocketIO
         socketio.emit('mqtt_message', {
@@ -148,15 +186,48 @@ def setup_mqtt():
         
         if not connected_to_mqtt:
             print(f"Kunne ikke forbinde til MQTT broker efter {max_retries} forsøg")
+            print("Fortsætter alligevel - vil forsøge at genforbinde senere")
+        else:
+            print("MQTT forbindelse etableret!")
             
     except Exception as e:
         print(f"Fejl ved MQTT-forbindelse: {e}")
+        print("Fortsætter alligevel - vil forsøge at genforbinde senere")
 
 # Start MQTT-klienten i en separat tråd
 def start_mqtt_thread():
+    print("Starter MQTT-forbindelse i separat tråd...")
     mqtt_thread = threading.Thread(target=setup_mqtt)
     mqtt_thread.daemon = True
     mqtt_thread.start()
+    print("MQTT-tråd startet")
+
+# Funktion til at genforbinde MQTT hvis nødvendigt
+def ensure_mqtt_connection():
+    global mqtt_client, connected_to_mqtt
+    
+    if not mqtt_client:
+        print("MQTT-klient er ikke initialiseret. Starter ny...")
+        setup_mqtt()
+        time.sleep(2)  # Vent på forbindelse
+        
+    if not connected_to_mqtt and mqtt_client:
+        print("MQTT-klient er ikke forbundet. Forsøger at genforbinde...")
+        try:
+            mqtt_client.reconnect()
+            time.sleep(2)  # Vent på forbindelse
+            
+            if connected_to_mqtt:
+                print("MQTT-genforbindelse lykkedes!")
+                return True
+            else:
+                print("MQTT-genforbindelse fejlede!")
+                return False
+        except Exception as e:
+            print(f"Fejl ved MQTT-genforbindelse: {e}")
+            return False
+    
+    return connected_to_mqtt
 
 # API-endpoint: Sundhedstjek
 @app.route('/api/health', methods=['GET'])
@@ -297,8 +368,9 @@ def delete_meter_endpoint(mac):
 # API-endpoint: Tænd måler
 @app.route('/api/meters/<mac>/on', methods=['POST'])
 def turn_on_meter(mac):
-    if not mqtt_client or not connected_to_mqtt:
-        return jsonify({'error': 'Ikke forbundet til MQTT'}), 503
+    # Sikrer MQTT-forbindelse
+    if not ensure_mqtt_connection():
+        return jsonify({'error': 'Ikke forbundet til MQTT efter genforbindelsesforsøg'}), 503
     
     # Fjern kolon fra MAC-adressen for at matche MQTT-emneformatet
     mac_no_colon = mac.replace(':', '')
@@ -306,19 +378,29 @@ def turn_on_meter(mac):
     # Send MQTT-besked for at tænde måleren med korrekt format
     topic = f"cmnd/obk{mac_no_colon}/Power"
     payload = "ON"
-    result = mqtt_client.publish(topic, payload)
     
-    # Tjek om beskeden blev sendt korrekt
-    if result.rc == 0:
-        return jsonify({'status': 'ok', 'message': 'Kommando sendt til måleren', 'topic': topic, 'payload': payload})
-    else:
-        return jsonify({'error': f'Kunne ikke sende kommando. Fejlkode: {result.rc}'}), 500
+    print(f"Sender MQTT-kommando: {topic} med payload: {payload}")
+    
+    try:
+        result = mqtt_client.publish(topic, payload)
+        
+        # Tjek om beskeden blev sendt korrekt
+        if result.rc == 0:
+            print(f"MQTT-kommando sendt: {topic} = {payload}")
+            return jsonify({'status': 'ok', 'message': 'Kommando sendt til måleren', 'topic': topic, 'payload': payload})
+        else:
+            print(f"Fejl ved afsendelse af MQTT-kommando. Fejlkode: {result.rc}")
+            return jsonify({'error': f'Kunne ikke sende kommando. Fejlkode: {result.rc}'}), 500
+    except Exception as e:
+        print(f"Exception ved afsendelse af MQTT-kommando: {e}")
+        return jsonify({'error': f'Fejl ved afsendelse af kommando: {str(e)}'}), 500
 
 # API-endpoint: Sluk måler
 @app.route('/api/meters/<mac>/off', methods=['POST'])
 def turn_off_meter(mac):
-    if not mqtt_client or not connected_to_mqtt:
-        return jsonify({'error': 'Ikke forbundet til MQTT'}), 503
+    # Sikrer MQTT-forbindelse
+    if not ensure_mqtt_connection():
+        return jsonify({'error': 'Ikke forbundet til MQTT efter genforbindelsesforsøg'}), 503
     
     # Fjern kolon fra MAC-adressen for at matche MQTT-emneformatet
     mac_no_colon = mac.replace(':', '')
@@ -326,13 +408,22 @@ def turn_off_meter(mac):
     # Send MQTT-besked for at slukke måleren med korrekt format
     topic = f"cmnd/obk{mac_no_colon}/Power"
     payload = "OFF"
-    result = mqtt_client.publish(topic, payload)
     
-    # Tjek om beskeden blev sendt korrekt
-    if result.rc == 0:
-        return jsonify({'status': 'ok', 'message': 'Kommando sendt til måleren', 'topic': topic, 'payload': payload})
-    else:
-        return jsonify({'error': f'Kunne ikke sende kommando. Fejlkode: {result.rc}'}), 500
+    print(f"Sender MQTT-kommando: {topic} med payload: {payload}")
+    
+    try:
+        result = mqtt_client.publish(topic, payload)
+        
+        # Tjek om beskeden blev sendt korrekt
+        if result.rc == 0:
+            print(f"MQTT-kommando sendt: {topic} = {payload}")
+            return jsonify({'status': 'ok', 'message': 'Kommando sendt til måleren', 'topic': topic, 'payload': payload})
+        else:
+            print(f"Fejl ved afsendelse af MQTT-kommando. Fejlkode: {result.rc}")
+            return jsonify({'error': f'Kunne ikke sende kommando. Fejlkode: {result.rc}'}), 500
+    except Exception as e:
+        print(f"Exception ved afsendelse af MQTT-kommando: {e}")
+        return jsonify({'error': f'Fejl ved afsendelse af kommando: {str(e)}'}), 500
 
 # API-endpoint: Søg efter nye målere
 @app.route('/api/scan', methods=['POST'])

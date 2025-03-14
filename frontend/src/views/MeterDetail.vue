@@ -262,6 +262,13 @@ export default {
       this.controlLoading = null
       if (success) {
         this.controlSuccess = 'Måler tændt!'
+        
+        // Opdater status direkte i komponenten
+        if (this.selectedMeter) {
+          this.selectedMeter.status.status = 'Tændt'
+          this.selectedMeter.status.tidspunkt = new Date().toISOString()
+        }
+        
         setTimeout(() => { this.controlSuccess = null }, 3000)
       }
     },
@@ -275,6 +282,13 @@ export default {
       this.controlLoading = null
       if (success) {
         this.controlSuccess = 'Måler slukket!'
+        
+        // Opdater status direkte i komponenten
+        if (this.selectedMeter) {
+          this.selectedMeter.status.status = 'Slukket'
+          this.selectedMeter.status.tidspunkt = new Date().toISOString()
+        }
+        
         setTimeout(() => { this.controlSuccess = null }, 3000)
       }
     },
