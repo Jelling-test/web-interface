@@ -63,50 +63,61 @@
         </div>
       </div>
       
-      <div class="row">
-        <div class="col-12">
-          <div class="card mb-4">
-            <div class="card-header">
-              <h5>Målerdata</h5>
+      <div class="data-sections">
+        <div class="data-section">
+          <h3>Seneste aflæsninger</h3>
+          <div class="data-content">
+            <div v-if="loading.readings" class="loading-container">
+              <div class="loading-spinner"></div>
+              <p>Indlæser seneste aflæsninger...</p>
             </div>
-            <div class="card-body">
-              <!-- Seneste aflæsninger -->
-              <div v-if="loading.readings && !meterReadings.length" class="text-center py-4">
-                <div class="spinner-border text-primary" role="status">
-                  <span class="visually-hidden">Indlæser...</span>
-                </div>
-                <p class="mt-2">Henter seneste aflæsninger...</p>
-              </div>
-              <div v-else-if="!meterReadings.length" class="text-center py-4">
-                <p>Ingen seneste aflæsninger tilgængelige</p>
-              </div>
-              <div v-else>
-                <MeterLineChart 
-                  :chartData="formattedReadingsData" 
-                  :loading="loading.readings"
-                  title="Seneste aflæsninger"
-                  valueUnit="kWh"
-                />
-              </div>
-
-              <!-- Daglige målinger -->
-              <div v-if="loading.daily && !dailyReadings.length" class="text-center py-4">
-                <div class="spinner-border text-primary" role="status">
-                  <span class="visually-hidden">Indlæser...</span>
-                </div>
-                <p class="mt-2">Henter daglige målinger...</p>
-              </div>
-              <div v-else-if="!dailyReadings.length" class="text-center py-4">
-                <p>Ingen daglige målinger tilgængelige</p>
-              </div>
-              <div v-else>
-                <MeterLineChart 
-                  :chartData="formattedDailyData" 
-                  :loading="loading.daily"
-                  title="Daglige målinger"
-                  valueUnit="kWh"
-                />
-              </div>
+            <div v-else-if="!meterReadings || meterReadings.length === 0" class="no-data-message">
+              <p>Ingen seneste aflæsninger tilgængelige</p>
+            </div>
+            <div v-else class="readings-table">
+              <table class="table table-striped">
+                <thead>
+                  <tr>
+                    <th>Tidspunkt</th>
+                    <th>kWh</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(reading, index) in meterReadings.slice(0, 10)" :key="index">
+                    <td>{{ formatDateTime(reading.tidspunkt || reading.oprettet) }}</td>
+                    <td>{{ reading.totalkwh }} kWh</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        
+        <div class="data-section">
+          <h3>Dagligt forbrug</h3>
+          <div class="data-content">
+            <div v-if="loading.daily" class="loading-container">
+              <div class="loading-spinner"></div>
+              <p>Indlæser dagligt forbrug...</p>
+            </div>
+            <div v-else-if="!dailyReadings || dailyReadings.length === 0" class="no-data-message">
+              <p>Ingen daglige aflæsninger tilgængelige</p>
+            </div>
+            <div v-else class="readings-table">
+              <table class="table table-striped">
+                <thead>
+                  <tr>
+                    <th>Dato</th>
+                    <th>Gennemsnit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(reading, index) in dailyReadings.slice(0, 10)" :key="index">
+                    <td>{{ formatDate(reading.dato || reading.date) }}</td>
+                    <td>{{ reading.totalKwh }} kWh</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -159,13 +170,9 @@
 
 <script>
 import { mapActions, mapMutations } from 'vuex'
-import MeterLineChart from '@/components/MeterLineChart.vue'
 
 export default {
   name: 'MeterDetail',
-  components: {
-    MeterLineChart
-  },
   props: {
     mac: {
       type: String,
@@ -176,8 +183,8 @@ export default {
     return {
       showEditModal: false,
       editForm: { name: '', number: '' },
-      selectedLimit: 200,
-      selectedDays: 30,
+      selectedLimit: 100,
+      selectedDays: 14,
       controlLoading: null,
       controlSuccess: null,
       mqttTestLoading: false,
@@ -204,24 +211,6 @@ export default {
       const nameValid = this.editForm.name && this.editForm.name.trim().length > 0
       const numberValid = /^\d{3}$/.test(this.editForm.number)
       return nameValid && numberValid
-    },
-    formattedReadingsData() {
-      if (!this.meterReadings || this.meterReadings.length === 0) return []
-      
-      // Konverter alle aflæsninger til det format, som MeterChart forventer
-      return this.meterReadings.map(reading => ({
-        timestamp: reading.tidspunkt || reading.oprettet,
-        value: parseFloat(reading.totalkwh)
-      }))
-    },
-    formattedDailyData() {
-      if (!this.dailyReadings || this.dailyReadings.length === 0) return []
-      
-      // Konverter alle daglige aflæsninger til det format, som MeterChart forventer
-      return this.dailyReadings.map(reading => ({
-        timestamp: reading.dato || reading.date,
-        value: parseFloat(reading.totalKwh)
-      }))
     }
   },
   methods: {
@@ -586,6 +575,31 @@ export default {
 
   .data-content {
     min-height: 200px;
+  }
+
+  .readings-table {
+    width: 100%;
+    overflow-x: auto;
+  }
+
+  .table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .table th, .table td {
+    padding: 8px;
+    text-align: left;
+    border-bottom: 1px solid #ddd;
+  }
+
+  .table th {
+    background-color: #f8f9fa;
+    font-weight: bold;
+  }
+
+  .table-striped tbody tr:nth-of-type(odd) {
+    background-color: rgba(0, 0, 0, 0.03);
   }
 
   .no-data-message {
