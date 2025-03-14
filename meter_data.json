@@ -1,0 +1,25 @@
+{
+  "info": {
+    "id": 1,
+    "mac": "0884DD9F",
+    "name": "test 1",
+    "nummer": "903",
+    "oprettet": "2025-03-14T17:21:51"
+  },
+  "last_reading": {
+    "id": 6420,
+    "mac": "0884DD9F",
+    "oprettet": "2025-03-14T18:25:54",
+    "tidspunkt": "2025-03-14T17:25:54",
+    "totalkwh": 0.472
+  },
+  "mac": "0884DD9F",
+  "status": {
+    "id": 1896,
+    "mac": "0884DD9F",
+    "oprettet": "2025-03-14T18:25:35",
+    "prioritet": 10,
+    "status": "T\u00e6ndt",
+    "tidspunkt": "2025-03-14T17:25:35"
+  }
+}
