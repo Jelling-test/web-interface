@@ -68,7 +68,7 @@ export default {
     
     // Formaterede data til grafen
     const formattedData = computed(() => {
-      if (!hasData.value) return {}
+      if (!props.chartData || props.chartData.length === 0) return {}
       
       // Sorter data efter tidspunkt
       const sortedData = [...props.chartData].sort((a, b) => 
