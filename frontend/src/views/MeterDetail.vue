@@ -35,7 +35,7 @@
         </div>
         <div class="detail-item">
           <span class="detail-label">Sidst set:</span>
-          <span class="detail-value">{{ formatDate(selectedMeter.status.tidspunkt) || 'Ukendt' }}</span>
+          <span class="detail-value">{{ formatDate(selectedMeter.status.oprettet || selectedMeter.status.tidspunkt) || 'Ukendt' }}</span>
         </div>
         <div class="detail-item">
           <span class="detail-label">Seneste aflæsning:</span>
@@ -210,7 +210,7 @@ export default {
       
       // Konverter alle aflæsninger til det format, som MeterChart forventer
       return this.meterReadings.map(reading => ({
-        timestamp: reading.tidspunkt || reading.oprettet,
+        timestamp: reading.oprettet || reading.tidspunkt,
         value: parseFloat(reading.totalkwh)
       }))
     },
@@ -240,14 +240,55 @@ export default {
     
     formatDate(dateString) {
       if (!dateString) return 'Ukendt'
-      const date = new Date(dateString)
-      return date.toLocaleString('da-DK')
+      
+      try {
+        // Konverter strengen til et Date-objekt
+        const date = new Date(dateString)
+        
+        // Ingen tidszone-justering - lad browseren håndtere dette korrekt
+        
+        // Formater dag, måned, år
+        const day = date.getDate().toString().padStart(2, '0')
+        const month = (date.getMonth() + 1).toString().padStart(2, '0')
+        const year = date.getFullYear()
+        
+        // Formater timer og minutter
+        const hours = date.getHours().toString().padStart(2, '0')
+        const minutes = date.getMinutes().toString().padStart(2, '0')
+        
+        // Sammensæt det formaterede resultat
+        return `${day}.${month}.${year}, ${hours}:${minutes}`
+      } catch (e) {
+        console.error('Fejl ved formatering af dato:', e)
+        return 'Ukendt format'
+      }
     },
     
     formatDateTime(dateString) {
       if (!dateString) return 'Ukendt'
-      const date = new Date(dateString)
-      return date.toLocaleString('da-DK', { hour: '2-digit', minute: '2-digit' })
+      
+      try {
+        // Konverter strengen til et Date-objekt
+        const date = new Date(dateString)
+        
+        // Ingen tidszone-justering - lad browseren håndtere dette korrekt
+        
+        // Formater dag, måned, år
+        const day = date.getDate().toString().padStart(2, '0')
+        const month = (date.getMonth() + 1).toString().padStart(2, '0')
+        const year = date.getFullYear()
+        
+        // Formater timer, minutter og sekunder
+        const hours = date.getHours().toString().padStart(2, '0')
+        const minutes = date.getMinutes().toString().padStart(2, '0')
+        const seconds = date.getSeconds().toString().padStart(2, '0')
+        
+        // Sammensæt det formaterede resultat
+        return `${day}.${month}.${year}, ${hours}:${minutes}:${seconds}`
+      } catch (e) {
+        console.error('Fejl ved formatering af dato og tid:', e)
+        return 'Ukendt format'
+      }
     },
     
     async updateMeter() {
@@ -277,7 +318,8 @@ export default {
         // Opdater status direkte i komponenten
         if (this.selectedMeter) {
           this.selectedMeter.status.status = 'Tændt'
-          this.selectedMeter.status.tidspunkt = new Date().toISOString()
+          this.selectedMeter.status.oprettet = new Date().toISOString()
+          this.selectedMeter.status.tidspunkt = new Date().toISOString() // Behold for kompatibilitet
         }
         
         setTimeout(() => { this.controlSuccess = null }, 3000)
@@ -297,7 +339,8 @@ export default {
         // Opdater status direkte i komponenten
         if (this.selectedMeter) {
           this.selectedMeter.status.status = 'Slukket'
-          this.selectedMeter.status.tidspunkt = new Date().toISOString()
+          this.selectedMeter.status.oprettet = new Date().toISOString()
+          this.selectedMeter.status.tidspunkt = new Date().toISOString() // Behold for kompatibilitet
         }
         
         setTimeout(() => { this.controlSuccess = null }, 3000)

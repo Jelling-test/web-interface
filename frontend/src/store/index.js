@@ -342,7 +342,8 @@ export default createStore({
           commit('UPDATE_SELECTED_METER', {
             status: {
               status: 'Tændt',
-              tidspunkt: new Date().toISOString()
+              oprettet: new Date().toISOString(),
+              tidspunkt: new Date().toISOString() // Behold for kompatibilitet
             }
           })
         }
@@ -373,7 +374,8 @@ export default createStore({
           commit('UPDATE_SELECTED_METER', {
             status: {
               status: 'Slukket',
-              tidspunkt: new Date().toISOString()
+              oprettet: new Date().toISOString(),
+              tidspunkt: new Date().toISOString() // Behold for kompatibilitet
             }
           })
         }
@@ -498,7 +500,8 @@ export default createStore({
           commit('UPDATE_SELECTED_METER', {
             status: {
               status: status,
-              tidspunkt: timestamp || new Date().toISOString()
+              oprettet: timestamp || new Date().toISOString(),
+              tidspunkt: timestamp || new Date().toISOString() // Behold for kompatibilitet
             }
           })
         }

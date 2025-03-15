@@ -74,12 +74,15 @@ export default {
     // Formater datoer
     const formatDateLabel = (dateStr) => {
       try {
+        // Konverter strengen til et Date-objekt
         const date = new Date(dateStr)
-        return date.toLocaleString('da-DK', { 
+        
+        // Ignorer tidszonen fra målerens data og vis PC/NAS/Browser lokal tid i stedet
+        return date.toLocaleDateString('da-DK', { 
           day: 'numeric', 
           month: 'short',
           hour: '2-digit', 
-          minute: '2-digit' 
+          minute: '2-digit'
         })
       } catch (error) {
         console.error('Fejl ved formatering af dato:', error, dateStr)
