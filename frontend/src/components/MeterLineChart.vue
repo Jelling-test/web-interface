@@ -14,17 +14,25 @@
         <h3>{{ title }}</h3>
       </div>
       
-      <canvas ref="chartCanvas"></canvas>
+      <apexchart
+        type="line"
+        height="300"
+        :options="chartOptions"
+        :series="chartSeries"
+      ></apexchart>
     </div>
   </div>
 </template>
 
 <script>
-import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
-import Chart from 'chart.js/auto'
+import { computed, onMounted } from 'vue'
+import VueApexCharts from 'vue3-apexcharts'
 
 export default {
   name: 'MeterLineChart',
+  components: {
+    apexchart: VueApexCharts
+  },
   props: {
     // Data til grafen
     chartData: {
@@ -58,181 +66,154 @@ export default {
     }
   },
   setup(props) {
-    const chartCanvas = ref(null)
-    const chart = ref(null)
-    
     // Tjek om der er data at vise
     const hasData = computed(() => {
       return props.chartData && props.chartData.length > 0
     })
     
-    // Formaterede data til grafen
-    const formattedData = computed(() => {
-      if (!props.chartData || props.chartData.length === 0) return {}
+    // Formater datoer
+    const formatDateLabel = (dateStr) => {
+      try {
+        const date = new Date(dateStr)
+        return date.toLocaleString('da-DK', { 
+          day: 'numeric', 
+          month: 'short',
+          hour: '2-digit', 
+          minute: '2-digit' 
+        })
+      } catch (error) {
+        console.error('Fejl ved formatering af dato:', error, dateStr)
+        return 'Ugyldig dato'
+      }
+    }
+    
+    // Formaterede data til grafen - series til ApexCharts
+    const chartSeries = computed(() => {
+      if (!hasData.value) return []
       
       // Sorter data efter tidspunkt
       const sortedData = [...props.chartData].sort((a, b) => 
         new Date(a.timestamp) - new Date(b.timestamp)
       )
       
-      // Map data til labels og værdier
-      const labels = sortedData.map(item => {
-        try {
-          const date = new Date(item.timestamp)
-          return formatDateLabel(date)
-        } catch (error) {
-          console.error('Fejl ved formatering af dato:', error, item.timestamp)
-          return 'Ugyldig dato'
-        }
-      })
-      
+      // Map data til værdier
       const values = sortedData.map(item => {
         const val = parseFloat(item.value)
         return isNaN(val) ? 0 : val
       })
       
-      return {
-        labels,
-        datasets: [
-          {
-            label: props.title,
-            data: values,
-            fill: true,
-            backgroundColor: `${props.primaryColor}20`, // 20 = 12% opacity
-            borderColor: props.primaryColor,
-            borderWidth: 2,
-            tension: 0.4,
-            pointRadius: 3,
-            pointBackgroundColor: props.primaryColor,
-            pointBorderColor: '#fff',
-            pointBorderWidth: 1
-          }
-        ]
-      }
+      return [{
+        name: props.title,
+        data: values
+      }]
     })
     
-    // Formater datoer
-    const formatDateLabel = (date) => {
-      return date.toLocaleString('da-DK', { 
-        day: 'numeric', 
-        month: 'short',
-        hour: '2-digit', 
-        minute: '2-digit' 
-      })
-    }
+    // Generér labels (x-axis kategorier) for grafen
+    const chartLabels = computed(() => {
+      if (!hasData.value) return []
+      
+      // Sorter data efter tidspunkt
+      const sortedData = [...props.chartData].sort((a, b) => 
+        new Date(a.timestamp) - new Date(b.timestamp)
+      )
+      
+      // Map data til labels
+      return sortedData.map(item => formatDateLabel(item.timestamp))
+    })
     
-    // Formater værdier med enheder
-    const formatValue = (value) => {
-      if (value === undefined || value === null) return 'N/A'
-      
-      // Afrund til 2 decimaler
-      const formattedValue = Math.round(value * 100) / 100
-      
-      // Tilføj enheder hvis angivet
-      return props.valueUnit ? `${formattedValue} ${props.valueUnit}` : formattedValue.toString()
-    }
-    
-    // Initialiser grafen
-    const initializeChart = () => {
-      if (!chartCanvas.value) return
-      
-      // Hvis der allerede er en graf, ødelæg den
-      if (chart.value) {
-        chart.value.destroy()
-      }
-      
-      // Opret ny graf
-      chart.value = new Chart(chartCanvas.value, {
-        type: 'line',
-        data: formattedData.value,
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: {
-              display: false
-            },
-            tooltip: {
-              mode: 'index',
-              intersect: false,
-              callbacks: {
-                label: function(context) {
-                  let label = context.dataset.label || '';
-                  if (label) {
-                    label += ': ';
-                  }
-                  if (context.parsed.y !== null) {
-                    label += formatValue(context.parsed.y);
-                  }
-                  return label;
-                }
-              }
+    // Chart options for ApexCharts
+    const chartOptions = computed(() => {
+      return {
+        chart: {
+          type: 'line',
+          height: 300,
+          toolbar: {
+            show: false
+          },
+          animations: {
+            enabled: true,
+            easing: 'easeinout',
+            speed: 800
+          }
+        },
+        colors: [props.primaryColor],
+        stroke: {
+          curve: 'smooth',
+          width: 2
+        },
+        fill: {
+          type: 'gradient',
+          gradient: {
+            shade: 'light',
+            type: 'vertical',
+            shadeIntensity: 0.2,
+            opacityFrom: 0.7,
+            opacityTo: 0.2
+          }
+        },
+        markers: {
+          size: 4,
+          colors: [props.primaryColor],
+          strokeColors: '#fff',
+          strokeWidth: 2
+        },
+        tooltip: {
+          x: {
+            formatter: function(val) {
+              return chartLabels.value[val-1] || ''
             }
           },
-          scales: {
-            x: {
-              grid: {
-                display: false
-              }
+          y: {
+            formatter: function(val) {
+              return props.valueUnit ? `${val} ${props.valueUnit}` : val
+            }
+          }
+        },
+        xaxis: {
+          categories: chartLabels.value,
+          labels: {
+            rotate: -45,
+            style: {
+              fontSize: '12px'
+            }
+          }
+        },
+        yaxis: {
+          labels: {
+            formatter: function(val) {
+              const formattedValue = Math.round(val * 100) / 100
+              return props.valueUnit ? `${formattedValue} ${props.valueUnit}` : formattedValue
+            }
+          }
+        },
+        grid: {
+          borderColor: '#e0e0e0',
+          strokeDashArray: 5
+        },
+        responsive: [{
+          breakpoint: 576,
+          options: {
+            chart: {
+              height: 250
             },
-            y: {
-              beginAtZero: false,
-              ticks: {
-                callback: function(value) {
-                  return formatValue(value);
-                }
+            xaxis: {
+              labels: {
+                rotate: -90
               }
             }
           }
-        }
-      })
-    }
-    
-    // Opdater grafen
-    const updateChart = () => {
-      if (!chart.value || !formattedData.value.datasets) return
-      
-      chart.value.data = formattedData.value
-      chart.value.update()
-    }
-    
-    // Opryd graf ved fjernelse af komponent
-    const destroyChart = () => {
-      if (chart.value) {
-        chart.value.destroy()
-        chart.value = null
-      }
-    }
-    
-    // Livscyklus hooks
-    onMounted(() => {
-      if (hasData.value) {
-        initializeChart()
+        }]
       }
     })
     
-    // Watch for data changes
-    watch(
-      () => props.chartData,
-      (newVal) => {
-        if (newVal && newVal.length > 0) {
-          if (chart.value) {
-            updateChart()
-          } else {
-            initializeChart()
-          }
-        }
-      },
-      { deep: true }
-    )
-    
-    onBeforeUnmount(() => {
-      destroyChart()
+    onMounted(() => {
+      // ApexCharts håndterer automatisk opdateringer, så vi behøver ikke manuel initialisering eller opdatering
     })
     
     return {
-      chartCanvas,
-      hasData
+      hasData,
+      chartOptions,
+      chartSeries
     }
   }
 }
@@ -240,51 +221,36 @@ export default {
 
 <style scoped>
 .chart-container {
-  background-color: white;
+  background-color: #ffffff;
   border-radius: 8px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-  padding: 1.5rem;
-  height: 300px;
-  margin-bottom: 1rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  padding: 16px;
+  margin-bottom: 20px;
+  height: 350px;
+  position: relative;
 }
 
 .chart-container.empty {
-  min-height: 300px;
-  justify-content: center;
-  align-items: center;
-}
-
-.chart-loading {
+  height: auto;
+  min-height: 150px;
   display: flex;
-  flex-direction: column;
-  justify-content: center;
   align-items: center;
-  min-height: 300px;
+  justify-content: center;
+  padding: 30px;
 }
 
-.loading-spinner {
-  border: 4px solid #f3f3f3;
-  border-top: 4px solid #3498db;
-  border-radius: 50%;
-  width: 40px;
-  height: 40px;
-  animation: spin 1s linear infinite;
-  margin-bottom: 10px;
-}
-
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
-.no-data {
+.chart-header {
   display: flex;
-  justify-content: center;
+  justify-content: space-between;
   align-items: center;
-  min-height: 200px;
-  color: #6c757d;
-  text-align: center;
-  padding: 1rem;
+  margin-bottom: 12px;
+}
+
+.chart-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #333;
 }
 
 .chart-wrapper {
@@ -293,18 +259,36 @@ export default {
   flex-direction: column;
 }
 
-.chart-header {
-  margin-bottom: 1rem;
+.no-data {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #6c757d;
+  text-align: center;
 }
 
-.chart-header h3 {
-  margin: 0;
-  font-size: 1.2rem;
-  font-weight: 600;
-  color: #333;
+.loading-spinner {
+  width: 30px;
+  height: 30px;
+  border: 3px solid rgba(0, 0, 0, 0.1);
+  border-radius: 50%;
+  border-top: 3px solid #0d6efd;
+  animation: spin 1s linear infinite;
+  margin-bottom: 10px;
 }
 
-canvas {
-  flex: 1;
+.chart-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #6c757d;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 </style>
